@@ -38,16 +38,19 @@ namespace CppCoverage
 
 		void SetWorkingDirectory(const std::filesystem::path&);
 		void AddArgument(const std::wstring&);
+		void SetEnableStd(bool isEnableStd);
 
 		const std::filesystem::path& GetPath() const;
 		const std::vector<std::wstring>& GetArguments() const;
 		const std::filesystem::path* GetWorkingDirectory() const;
+		const bool GetEnableStd() const;
 
 		friend CPPCOVERAGE_DLL std::wostream& operator<<(std::wostream& ostr, const StartInfo&);
 
 	private:
 		std::filesystem::path path_;
 		std::vector<std::wstring> arguments_;
+		bool isEnableStd_;
 		boost::optional<std::filesystem::path> workingDirectory_;
 	};
 }

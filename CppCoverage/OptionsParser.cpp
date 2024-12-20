@@ -130,8 +130,13 @@ namespace CppCoverage
 			        ProgramOptions::ProgramToRunArgOption);
 			if (arguments)
 			{
-				for (const auto& arg : *arguments)
+				for (const auto& arg : *arguments) {
+					if (arg == "--std") {
+						startInfo.SetEnableStd(true);
+						continue;
+					} 
 					startInfo.AddArgument(Tools::LocalToWString(arg));
+				}
 			}
 
 			const auto* workingDirectory =

@@ -48,6 +48,7 @@ namespace CppCoverage
 		: path_{ std::move(startInfo.path_) }
 		, arguments_( std::move(startInfo.arguments_) )
 		, workingDirectory_{ std::move(startInfo.workingDirectory_) }
+		, isEnableStd_{ std::move(startInfo.isEnableStd_) }
 	{
 	}
 
@@ -62,6 +63,11 @@ namespace CppCoverage
 	void StartInfo::AddArgument(const std::wstring& argument)
 	{
 		arguments_.push_back(argument);
+	}
+
+	void StartInfo::SetEnableStd(bool isEnableStd)
+	{
+		isEnableStd_ = isEnableStd;
 	}
 
 	//-------------------------------------------------------------------------
@@ -82,6 +88,11 @@ namespace CppCoverage
 		if (workingDirectory_)
 			return &workingDirectory_.get();
 		return nullptr;
+	}
+
+	const bool StartInfo::GetEnableStd() const
+	{
+		return isEnableStd_;
 	}
 
 	//-------------------------------------------------------------------------

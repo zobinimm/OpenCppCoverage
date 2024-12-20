@@ -25,6 +25,8 @@
 
 #include "StartInfo.hpp"
 #include "CppCoverageException.hpp"
+#include <thread>
+#include <iostream>
 
 namespace CppCoverage
 {
@@ -89,6 +91,40 @@ namespace CppCoverage
 		STARTUPINFO lpStartupInfo;
 
 		ZeroMemory(&lpStartupInfo, sizeof(lpStartupInfo));
+		lpStartupInfo.cb = sizeof(STARTUPINFO);
+
+		HANDLE hStdInRead = nullptr, hStdInWrite = nullptr;
+		HANDLE hStdOutRead = nullptr, hStdOutWrite = nullptr;
+
+		// Check if standard I/O redirection is enabled
+		if (startInfo_.GetEnableStd()) {
+			SECURITY_ATTRIBUTES sa;
+			sa.nLength = sizeof(SECURITY_ATTRIBUTES);
+			sa.bInheritHandle = TRUE;
+			sa.lpSecurityDescriptor = nullptr;
+
+			if (!CreatePipe(&hStdInRead, &hStdInWrite, &sa, 0)) {
+				throw std::runtime_error("Failed to create stdin pipe");
+			}
+
+			if (!SetHandleInformation(hStdInWrite, HANDLE_FLAG_INHERIT, 0)) {
+				throw std::runtime_error("Failed to set handle information for stdin");
+			}
+
+			if (!CreatePipe(&hStdOutRead, &hStdOutWrite, &sa, 0)) {
+				throw std::runtime_error("Failed to create stdout pipe");
+			}
+
+			if (!SetHandleInformation(hStdOutRead, HANDLE_FLAG_INHERIT, 0)) {
+				throw std::runtime_error("Failed to set handle information for stdout");
+			}
+
+			lpStartupInfo.hStdInput = hStdInRead;
+			lpStartupInfo.hStdOutput = hStdOutWrite;
+			lpStartupInfo.hStdError = hStdOutWrite;
+			lpStartupInfo.dwFlags |= STARTF_USESTDHANDLES;
+		}
+
 		const auto* workindDirectory = startInfo_.GetWorkingDirectory();
 		auto optionalCommandLine = CreateCommandLine(startInfo_.GetArguments());
 		auto commandLine = (optionalCommandLine) ? &(*optionalCommandLine)[0] : nullptr;
@@ -99,7 +135,7 @@ namespace CppCoverage
 			commandLine,
 			nullptr,
 			nullptr,
-			FALSE,
+			startInfo_.GetEnableStd(),
 			creationFlags,
 			nullptr,
 			(workindDirectory) ? workindDirectory->c_str() : nullptr,
@@ -124,7 +160,56 @@ namespace CppCoverage
 				ostr << startInfo_
 				     << CppCoverage::GetErrorMessage(GetLastError());
 			}
+			// Close handles if opened
+			if (hStdInRead) CloseHandle(hStdInRead);
+			if (hStdInWrite) CloseHandle(hStdInWrite);
+			if (hStdOutRead) CloseHandle(hStdOutRead);
+			if (hStdOutWrite) CloseHandle(hStdOutWrite);
+
 			throw std::runtime_error(Tools::ToLocalString(ostr.str()));
-		}		
+		}
+
+		// Close unnecessary pipe ends in the parent process
+		if (startInfo_.GetEnableStd()) {
+			CloseHandle(hStdInRead);
+			CloseHandle(hStdOutWrite);
+
+			// Thread to read child process output and send to parent stdout
+			std::thread([hStdOutRead]() {
+				char buffer[4096];
+				DWORD bytesRead;
+
+				while (true) {
+					if (!ReadFile(hStdOutRead, buffer, sizeof(buffer) - 1, &bytesRead, nullptr) || bytesRead == 0)
+						break;
+
+					buffer[bytesRead] = '\0';
+					if (!WriteFile(GetStdHandle(STD_OUTPUT_HANDLE), buffer, bytesRead, nullptr, nullptr))
+						break;
+				}
+
+				CloseHandle(hStdOutRead);
+			}).detach();
+
+			std::thread([hStdInWrite]() {
+				char buffer[4096];
+
+				while (true) {
+					std::cin.getline(buffer, sizeof(buffer));
+					DWORD bytesToWrite = static_cast<DWORD>(std::strlen(buffer));
+
+					if (bytesToWrite == 0)
+						continue;
+
+					buffer[bytesToWrite] = '\n';
+
+					DWORD bytesWritten;
+					if (!WriteFile(hStdInWrite, buffer, bytesToWrite + 1, &bytesWritten, nullptr))
+						break;
+				}
+
+				CloseHandle(hStdInWrite);
+			}).detach();
+		}
 	}
 }
